@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/proxy?path=health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/proxy?path=$1"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "s5-worker-1",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "env": {
+    "s5-worker-2": { "name": "s5-worker-2" },
+    "s5-worker-3": { "name": "s5-worker-3" },
+    "s5-worker-4": { "name": "s5-worker-4" },
+    "s5-worker-5": { "name": "s5-worker-5" },
+    "s5-worker-6": { "name": "s5-worker-6" },
+    "s5-worker-7": { "name": "s5-worker-7" },
+    "s5-worker-8": { "name": "s5-worker-8" },
+    "s5-worker-9": { "name": "s5-worker-9" },
+    "1-s5-worker": { "name": "1-s5-worker" },
+    "2-s5-worker": { "name": "2-s5-worker" },
+    "3-s5-worker": { "name": "3-s5-worker" },
+    "4-s5-worker": { "name": "4-s5-worker" },
+    "5-s5-worker": { "name": "5-s5-worker" },
+    "6-s5-worker": { "name": "6-s5-worker" },
+    "7-s5-worker": { "name": "7-s5-worker" },
+    "8-s5-worker": { "name": "8-s5-worker" },
+    "9-s5-worker": { "name": "9-s5-worker" },
+    "99-s5-worker": { "name": "99-s5-worker" }
+  }
+}

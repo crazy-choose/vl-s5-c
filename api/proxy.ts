@@ -9,12 +9,12 @@ declare const process: {
 
 export const config = {
   runtime: 'nodejs',
-  maxDuration: 60, // Hobby 上限 60s (Pro 可设 300)
+  maxDuration: 300, // Vercel Hobby Node maxDuration 300s (default + max); Pro 300s default 可配 800s
 };
 
-// Node.js runtime: 50s TTFT 留 10s buffer 给响应构造 + body 透传启动。
-// body 读阶段不限时（Vercel Node.js Hobby 60s / Pro 300s wall 自然管控）。
-const FETCH_TTFT_TIMEOUT_MS = 50_000;
+// TTFT 仅作首响兜底（5s 内未首响 → 主动 504，便于上游 failover / key rotate）。
+// 首响后透传流式 body 不限时，受 maxDuration 300s wall 管控。
+const FETCH_TTFT_TIMEOUT_MS = 30_000;
 
 const PROXY_AUTH = new Map<string, string>();
 let authInitialized = false;
@@ -87,6 +87,7 @@ const HOP_BY_HOP = [
   'trailer',
   'transfer-encoding',
   'upgrade',
+  'user-agent',
 ];
 
 export default {
@@ -95,7 +96,7 @@ export default {
     const pathVal = url.searchParams.get('path');
     const start = Date.now();
 
-    if (pathVal === '' || pathVal === 'health') {
+    if (pathVal === '' || pathVal === 'health' || !pathVal.includes('/')) {
       return new Response('ok', { status: 200 });
     }
 
@@ -110,14 +111,17 @@ export default {
     const headers = new Headers(request.headers);
     for (const h of HOP_BY_HOP) headers.delete(h);
 
+    // 透传 client UA: gorouter 注入 X-Forwarded-User-Agent → 改写 user-agent 给上游
+    const fwdUa = request.headers.get('x-forwarded-user-agent');
+    if (fwdUa) headers.set('user-agent', fwdUa);
+
+    const ttftController = new AbortController();
+    const ttftTimer = setTimeout(() => ttftController.abort(), FETCH_TTFT_TIMEOUT_MS);
     const init: RequestInit = {
       method: request.method,
       headers,
       redirect: 'manual',
-      signal: AbortSignal.any([
-        request.signal,
-        AbortSignal.timeout(FETCH_TTFT_TIMEOUT_MS),
-      ]),
+      signal: AbortSignal.any([request.signal, ttftController.signal]),
     };
     if (request.method !== 'GET' && request.method !== 'HEAD' && request.body) {
       init.body = request.body;
@@ -125,19 +129,52 @@ export default {
     }
 
     try {
+      log({ ev: 'proxy_outgoing', ua: headers.get('user-agent') });
       const upstream = await fetch(targetUrl, init);
+      clearTimeout(ttftTimer);
+      const ttftMs = Date.now() - start;
       log({
-        ev: 'proxy_ok',
+        ev: 'proxy_stream_open',
         method: request.method,
         path: url.pathname,
         upstream: targetUrl,
         status: upstream.status,
-        ttft_ms: Date.now() - start,
+        ttft_ms: ttftMs,
       });
-      return new Response(upstream.body, {
+
+      const outHeaders = new Headers(upstream.headers);
+      outHeaders.set('x-accel-buffering', 'no');
+      outHeaders.set('Cache-Control', 'no-cache');
+      if (!outHeaders.get('content-type')) {
+        outHeaders.set('content-type', 'text/event-stream');
+      }
+
+      let firstChunk = true;
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, ctrl) {
+          if (firstChunk) {
+            log({ ev: 'proxy_stream_first_chunk', ms: Date.now() - start });
+            firstChunk = false;
+          }
+          ctrl.enqueue(chunk);
+        },
+      });
+      const pipeController = new AbortController();
+      if (request.signal) {
+        if (request.signal.aborted) {
+          pipeController.abort();
+        } else {
+          request.signal.addEventListener('abort', () => pipeController.abort(), { once: true });
+        }
+      }
+      upstream.body!.pipeTo(writable, { signal: pipeController.signal })
+        .then(() => log({ ev: 'proxy_stream_close', ms: Date.now() - start, ok: true }))
+        .catch((e) => log({ ev: 'proxy_stream_close', ms: Date.now() - start, ok: false, err: (e as Error)?.message || String(e) }));
+
+      return new Response(readable, {
         status: upstream.status,
         statusText: upstream.statusText,
-        headers: upstream.headers,
+        headers: outHeaders,
       });
     } catch (err) {
       const e = err as Error;

@@ -149,16 +149,6 @@ export default {
         outHeaders.set('content-type', 'text/event-stream');
       }
 
-      let firstChunk = true;
-      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, ctrl) {
-          if (firstChunk) {
-            log({ ev: 'proxy_stream_first_chunk', ms: Date.now() - start });
-            firstChunk = false;
-          }
-          ctrl.enqueue(chunk);
-        },
-      });
       const pipeController = new AbortController();
       if (request.signal) {
         if (request.signal.aborted) {
@@ -167,9 +157,33 @@ export default {
           request.signal.addEventListener('abort', () => pipeController.abort(), { once: true });
         }
       }
+      const STALL_TIMEOUT_MS = 30_000;
+      let firstChunk = true;
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      const armStall = () => {
+        if (stallTimer) clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => pipeController.abort(), STALL_TIMEOUT_MS);
+      };
+      armStall();
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, ctrl) {
+          if (firstChunk) {
+            log({ ev: 'proxy_stream_first_chunk', ms: Date.now() - start });
+            firstChunk = false;
+          }
+          armStall();
+          ctrl.enqueue(chunk);
+        },
+      });
       upstream.body!.pipeTo(writable, { signal: pipeController.signal })
-        .then(() => log({ ev: 'proxy_stream_close', ms: Date.now() - start, ok: true }))
-        .catch((e) => log({ ev: 'proxy_stream_close', ms: Date.now() - start, ok: false, err: (e as Error)?.message || String(e) }));
+        .then(() => {
+          if (stallTimer) clearTimeout(stallTimer);
+          log({ ev: 'proxy_stream_close', ms: Date.now() - start, ok: true });
+        })
+        .catch((e) => {
+          if (stallTimer) clearTimeout(stallTimer);
+          log({ ev: 'proxy_stream_close', ms: Date.now() - start, ok: false, err: (e as Error)?.message || String(e) });
+        });
 
       return new Response(readable, {
         status: upstream.status,

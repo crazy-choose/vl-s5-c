@@ -12,9 +12,10 @@ export const config = {
   maxDuration: 300, // Vercel Hobby Node maxDuration 300s (default + max); Pro 300s default 可配 800s
 };
 
-// TTFT 仅作首响兜底（45s 内未首响 → 主动 504，便于上游 failover / key rotate）。
+// TTFT 仅作首响兜底（90s 内未首响 → 主动 504，便于上游 failover / key rotate）。
 // 首响后透传流式 body 不限时，受 maxDuration 300s wall 管控。
-const FETCH_TTFT_TIMEOUT_MS = 45_000;
+// 2026-06-24: 45→90s, nvidia tthok 慢 key 78s 响应, 45s 卡边界必 abort
+const FETCH_TTFT_TIMEOUT_MS = 90_000;
 const STALL_TIMEOUT_MS = 30_000;
 
 const PROXY_AUTH = new Map<string, string>();

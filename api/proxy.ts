@@ -12,9 +12,9 @@ export const config = {
   maxDuration: 300, // Vercel Hobby Node maxDuration 300s (default + max); Pro 300s default 可配 800s
 };
 
-// TTFT 仅作首响兜底（30s 内未首响 → 主动 504，便于上游 failover / key rotate）。
+// TTFT 仅作首响兜底（45s 内未首响 → 主动 504，便于上游 failover / key rotate）。
 // 首响后透传流式 body 不限时，受 maxDuration 300s wall 管控。
-const FETCH_TTFT_TIMEOUT_MS = 30_000;
+const FETCH_TTFT_TIMEOUT_MS = 45_000;
 const STALL_TIMEOUT_MS = 30_000;
 
 const PROXY_AUTH = new Map<string, string>();
@@ -237,6 +237,7 @@ async function handle(request: Request): Promise<Response> {
     const e = err as Error;
     const msg = e.message || String(err);
     const isAbort = e.name === 'AbortError' || /abort|timeout/i.test(msg);
+    if (isAbort && request.body) { try { await request.body.cancel(); } catch {} }
     log({
       ev: isAbort ? 'proxy_abort' : 'proxy_err',
       method: request.method,

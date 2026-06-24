@@ -176,7 +176,7 @@ async function handle(request: Request): Promise<Response> {
     const outHeaders = new Headers(upstream.headers);
     for (const h of RES_HOP_BY_HOP) outHeaders.delete(h);
     outHeaders.set('x-accel-buffering', 'no');
-    outHeaders.set('cache-control', 'no-store');
+    outHeaders.set('cache-control', 'no-cache');
     if (!outHeaders.get('content-type')) {
       outHeaders.set('content-type', 'text/event-stream');
     }

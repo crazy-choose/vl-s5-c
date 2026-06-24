@@ -145,18 +145,24 @@ async function handle(request: Request): Promise<Response> {
   if (fwdUa) headers.set('user-agent', fwdUa);
   if (!headers.has('accept')) headers.set('accept', 'text/event-stream');
 
+  const ttftController = new AbortController();
+  const ttftTimer = setTimeout(() => ttftController.abort(), FETCH_TTFT_TIMEOUT_MS);
+  const signals: AbortSignal[] = [];
+  if (request.signal) signals.push(request.signal);
+  signals.push(ttftController.signal);
   const init: RequestInit = {
     method: request.method,
     headers,
     redirect: 'follow',
-    signal: AbortSignal.any([
-      request.signal,
-      AbortSignal.timeout(FETCH_TTFT_TIMEOUT_MS),
-    ]),
+    signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
   };
-  if (request.method !== 'GET' && request.method !== 'HEAD' && request.body) {
-    init.body = request.body;
-    (init as RequestInit & { duplex: 'half' }).duplex = 'half';
+
+  // Vercel Node runtime: 流式 request.body + duplex:'half' 上传不可靠,
+  // 大 body 时 upstream 收不到完整请求 → 0 frames / 超时. 先 buffer.
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const bodyBuf = await request.arrayBuffer();
+    init.body = bodyBuf;
+    headers.set('content-length', String(bodyBuf.byteLength));
   }
 
   try {
@@ -164,6 +170,7 @@ async function handle(request: Request): Promise<Response> {
     for (const k of headers.keys()) fwdKeys.push(k);
     log({ ev: 'proxy_outgoing', target: targetUrl, method: request.method, host: headers.get('host'), fwd_headers: fwdKeys });
     const upstream = await fetch(targetUrl, init);
+    clearTimeout(ttftTimer);
     const ttftMs = Date.now() - start;
 
     const outHeaders = new Headers(upstream.headers);
@@ -236,10 +243,10 @@ async function handle(request: Request): Promise<Response> {
       headers: outHeaders,
     });
   } catch (err) {
+    clearTimeout(ttftTimer);
     const e = err as Error;
     const msg = e.message || String(err);
     const isAbort = e.name === 'AbortError' || /abort|timeout/i.test(msg);
-    if (isAbort && request.body) { try { await request.body.cancel(); } catch {} }
     log({
       ev: isAbort ? 'proxy_abort' : 'proxy_err',
       method: request.method,

@@ -9,5 +9,10 @@
       "source": "/(.*)",
       "destination": "/api/proxy?path=$1"
     }
-  ]
+  ],
+  "functions": {
+    "api/*": {
+      "supportsCancellation": true
+    }
+  }
 }

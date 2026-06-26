@@ -3,7 +3,7 @@
 // 此文件保留为回退 / 参考
 
 const FETCH_TTFT_TIMEOUT_MS = 30_000;
-const STALL_TIMEOUT_MS = 30_000;
+const STALL_TIMEOUT_MS = 121_000;
 
 const PROXY_AUTH = new Map<string, string>();
 let authInitialized = false;

@@ -14,10 +14,10 @@ export const config = {
 
 // TTFT 仅作首响兜底（90s 内未首响 → 主动 504，便于上游 failover / key rotate）。
 // 首响后透传流式 body 不限时，受 maxDuration 300s wall 管控。
-// 2026-06-24: 45→90s, nvidia tthok 慢 key 78s 响应, 45s 卡边界必 abort
+// 2026-06-27: 45→90s, nvidia tthok 慢 key 78s 响应, 45s 卡边界必 abort
 const FETCH_TTFT_TIMEOUT_MS = 90_000;
-// 2026-06-24: 30→61s, GLM-5.1 流式帧间隔超 30s 触发 stall abort
-const STALL_TIMEOUT_MS = 61_000;
+// // 2026-06-27: 61→121s, nvidia 思考间隔可达 60s+，61s stall 太短导致 abort
+const STALL_TIMEOUT_MS = 121_000;
 
 const PROXY_AUTH = new Map<string, string>();
 let authInitialized = false;
